@@ -1,0 +1,6 @@
+{
+  "name": "Mindspace",
+  "description": "A reflective operating layer for the internet age. Save, organize, and reflect on your digital life.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

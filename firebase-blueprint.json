@@ -1,0 +1,82 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "geminiApiKey": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "MindItem": {
+      "title": "Mind Item",
+      "description": "A single thought, memory or captured event",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["note", "link", "quote", "screenshot", "image"] },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "number" },
+        "source": { "type": "string" },
+        "imageData": { "type": "string" },
+        "ocrText": { "type": "string" },
+        "isFavorite": { "type": "boolean" },
+        "linkedItemIds": { "type": "array", "items": { "type": "string" } },
+        "summary": { "type": "string" },
+        "autoCategory": { "type": "string" }
+      },
+      "required": ["id", "type", "title", "content", "createdAt"]
+    },
+    "DigitalImport": {
+      "title": "Digital Import",
+      "description": "Record of a digital data import",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "source": { "type": "string", "enum": ["youtube", "instagram", "tiktok", "reddit", "screentime", "other"] },
+        "fileName": { "type": "string" },
+        "importedAt": { "type": "number" },
+        "dataCount": { "type": "number" },
+        "status": { "type": "string", "enum": ["processing", "ready", "error"] }
+      },
+      "required": ["id", "source", "fileName", "importedAt", "status"]
+    },
+    "ScreenTimeMetric": {
+      "title": "Screen Time Metric",
+      "description": "Daily screen time metrics",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string" },
+        "totalMinutes": { "type": "number" },
+        "categories": { "type": "object" }
+      },
+      "required": ["date", "totalMinutes"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile document"
+    },
+    "/users/{userId}/mindItems/{itemId}": {
+      "schema": "MindItem",
+      "description": "Collection of thoughts and memories"
+    },
+    "/users/{userId}/digitalImports/{importId}": {
+      "schema": "DigitalImport",
+      "description": "Collection of data import logs"
+    },
+    "/users/{userId}/screenTimeMetrics/{metricId}": {
+      "schema": "ScreenTimeMetric",
+      "description": "Daily usage statistics"
+    }
+  }
+}

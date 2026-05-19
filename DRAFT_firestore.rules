@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Helpers
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+
+    // User Profile
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL'])
+      );
+
+      function isValidUser(data) {
+        return data.uid == userId &&
+               data.email is string && data.email.size() <= 128 &&
+               (data.displayName == null || (data.displayName is string && data.displayName.size() <= 64)) &&
+               (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 512));
+      }
+
+      // MindItems subcollection
+      match /mindItems/{itemId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId);
+        allow create: if isOwner(userId) && isVerified() && isValidMindItem(incoming());
+        allow update: if isOwner(userId) && isVerified() && isValidMindItem(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['text', 'type', 'category', 'impact', 'sentiment', 'location', 'tags', 'aiInsight'])
+        );
+        allow delete: if isOwner(userId) && isVerified();
+
+        function isValidMindItem(data) {
+          return data.id == itemId &&
+                 data.text is string && data.text.size() <= 10000 &&
+                 data.type in ['growth', 'habit', 'realization', 'routine'] &&
+                 data.timestamp is number &&
+                 (data.impact == null || data.impact in ['low', 'medium', 'high']) &&
+                 (data.sentiment == null || data.sentiment is number) &&
+                 (data.location == null || data.location is string) &&
+                 (data.tags == null || (data.tags is list && data.tags.size() <= 50)) &&
+                 (data.aiInsight == null || (data.aiInsight is string && data.aiInsight.size() <= 5000));
+        }
+      }
+
+      // DigitalImports subcollection
+      match /digitalImports/{importId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId);
+        allow create: if isOwner(userId) && isVerified() && isValidDigitalImport(incoming());
+        allow update: if isOwner(userId) && isVerified() && isValidDigitalImport(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'dataCount'])
+        );
+        allow delete: if isOwner(userId) && isVerified();
+
+        function isValidDigitalImport(data) {
+          return data.id == importId &&
+                 data.source in ['youtube', 'instagram', 'tiktok', 'reddit', 'screentime', 'other'] &&
+                 data.fileName is string && data.fileName.size() <= 256 &&
+                 data.importedAt is number &&
+                 data.status in ['processing', 'ready', 'error'] &&
+                 (data.dataCount == null || data.dataCount is number);
+        }
+      }
+
+      // ScreenTimeMetrics subcollection
+      match /screenTimeMetrics/{metricId} {
+        allow list: if isOwner(userId);
+        allow get: if isOwner(userId);
+        allow create: if isOwner(userId) && isVerified() && isValidScreenTimeMetric(incoming());
+        allow update: if isOwner(userId) && isVerified() && isValidScreenTimeMetric(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['totalMinutes', 'categories'])
+        );
+        allow delete: if isOwner(userId) && isVerified();
+
+        function isValidScreenTimeMetric(data) {
+          return data.date is string && data.date.size() <= 32 &&
+                 data.totalMinutes is number &&
+                 (data.categories == null || data.categories is map);
+        }
+      }
+    }
+  }
+}
