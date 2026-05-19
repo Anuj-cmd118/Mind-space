@@ -19,7 +19,8 @@ import {
   Hash,
   Star,
   Trash2,
-  Brain
+  Brain,
+  Menu
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import PomodoroTimer from './components/PomodoroTimer';
@@ -41,6 +42,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [authReady, setAuthReady] = useState(false);
   const [view, setView] = useState<'feed' | 'timer' | 'settings' | 'map' | 'algorithms' | 'reflection' | 'wellness'>('feed');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [activeCategory, setActiveCategory] = useState<ContentType | 'all'>('all');
@@ -54,6 +56,7 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [isCloudSaving, setIsCloudSaving] = useState(false);
   const [hasDriveToken, setHasDriveToken] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   // Auth Listener & Onboarding check
   useEffect(() => {
@@ -143,6 +146,7 @@ export default function App() {
   // Handle Login/Logout
   const handleLogin = async () => {
     try {
+      setAuthError(null);
       const result = await signInWithPopup(auth, googleProvider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential?.accessToken) {
@@ -150,8 +154,15 @@ export default function App() {
         sessionStorage.setItem('mindspace_drive_token', credential.accessToken);
         setHasDriveToken(true);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login failed:', error);
+      let message = "An error occurred during authentication.";
+      if (error?.code === 'auth/popup-closed-by-user' || error?.message?.includes('popup-closed-by-user')) {
+        message = "The sign-in popup window was closed before completing the process. If popups are being blocked in the embedded preview, try opening Mindspace in a new tab or checking your browser's pop-up blocker settings.";
+      } else if (error?.message) {
+        message = error.message;
+      }
+      setAuthError(message);
     }
   };
 
@@ -310,8 +321,15 @@ export default function App() {
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {/* Top Header - Mobile and Search */}
-        <header className="px-6 py-4 bg-surface-dim/80 backdrop-blur-md flex items-center justify-between border-b border-black/5 md:border-none">
-          <div className="flex items-center gap-3 md:hidden">
+        <header className="px-6 py-4 bg-surface-dim/80 backdrop-blur-md flex items-center justify-between gap-4 border-b border-black/5 md:border-none">
+          <div className="flex items-center gap-2.5 md:hidden shrink-0 mr-4">
+            <button 
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-2 -ml-2 text-primary hover:bg-surface-container/60 active:scale-95 rounded-xl transition-all"
+              aria-label="Open menu"
+            >
+              <Menu size={22} />
+            </button>
             <div className="p-1.5 bg-primary rounded-lg text-on-primary">
               <Brain size={18} />
             </div>
@@ -668,6 +686,101 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Mobile Drawer Sidebar */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSidebarOpen(false)}
+              className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+            />
+            
+            {/* Drawer Container */}
+            <motion.aside 
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="md:hidden fixed top-0 bottom-0 left-0 w-72 z-50 bg-surface-container flex flex-col p-6 overflow-y-auto shadow-2xl rounded-r-[32px] border-r border-surface-container-high"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-on-primary">
+                    <Brain size={20} />
+                  </div>
+                  <h1 className="text-xl font-serif font-bold italic tracking-tight text-primary">Mindspace</h1>
+                </div>
+                <button 
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="p-1.5 hover:bg-surface-container-high rounded-xl text-secondary transition-all"
+                  aria-label="Close menu"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <nav className="flex-1 space-y-2">
+                <div className="text-[11px] uppercase tracking-widest text-secondary font-bold mb-4 opacity-70">Archive</div>
+                <SidebarNavButton 
+                  active={view === 'feed'} 
+                  onClick={() => { setView('feed'); setIsSidebarOpen(false); }} 
+                  icon={<LayoutGrid size={18} />} 
+                  label="Memory Garden" 
+                />
+                <SidebarNavButton 
+                  active={view === 'map'} 
+                  onClick={() => { setView('map'); setIsSidebarOpen(false); }} 
+                  icon={<GitBranch size={18} />} 
+                  label="Knowledge Map" 
+                />
+                <SidebarNavButton 
+                  active={view === 'algorithms'} 
+                  onClick={() => { setView('algorithms'); setIsSidebarOpen(false); }} 
+                  icon={<Brain size={18} />} 
+                  label="Digital Algorithm" 
+                />
+                <SidebarNavButton 
+                  active={view === 'reflection'} 
+                  onClick={() => { setView('reflection'); setIsSidebarOpen(false); }} 
+                  icon={<Sparkles size={18} />} 
+                  label="Reflection Hub" 
+                />
+                <SidebarNavButton 
+                  active={view === 'wellness'} 
+                  onClick={() => { setView('wellness'); setIsSidebarOpen(false); }} 
+                  icon={<Star size={18} />} 
+                  label="Wellness Center" 
+                />
+                <SidebarNavButton 
+                  active={view === 'timer'} 
+                  onClick={() => { setView('timer'); setIsSidebarOpen(false); }} 
+                  icon={<Timer size={18} />} 
+                  label="Focus Lab" 
+                />
+                <div className="pt-6">
+                  <div className="text-[11px] uppercase tracking-widest text-secondary font-bold mb-4 opacity-70">System</div>
+                  <SidebarNavButton 
+                    active={view === 'settings'} 
+                    onClick={() => { setView('settings'); setIsSidebarOpen(false); }} 
+                    icon={<Settings size={18} />} 
+                    label="Settings" 
+                  />
+                </div>
+              </nav>
+
+              <div className="mt-auto p-4 bg-surface-container-high rounded-2xl text-center">
+                <div className="text-[10px] uppercase font-bold text-on-secondary-container mb-1">Status</div>
+                <div className="text-xs font-serif text-primary italic">Roadmap: 100%</div>
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Bottom Navigation - Mobile only */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-surface-container/95 backdrop-blur-xl border-t border-surface-container-high px-6 py-4">
         <div className="flex justify-between items-center max-w-md mx-auto">
@@ -689,6 +802,12 @@ export default function App() {
             icon={<Settings size={24} />} 
             label="Config" 
           />
+          <NavButton 
+            active={isSidebarOpen} 
+            onClick={() => setIsSidebarOpen(true)} 
+            icon={<Menu size={24} />} 
+            label="Menu" 
+          />
         </div>
       </nav>
 
@@ -699,6 +818,54 @@ export default function App() {
             setShowOnboarding(false);
             localStorage.setItem('mindspace_onboarded', 'true');
           }} />
+        )}
+      </AnimatePresence>
+
+      {/* Auth Error Toast */}
+      <AnimatePresence>
+        {authError && (
+          <motion.div
+            initial={{ opacity: 0, y: -50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[110] w-11/12 max-w-lg bg-white border border-rose-100 rounded-[24px] p-6 shadow-2xl flex flex-col gap-4 font-sans"
+          >
+            <div className="flex items-start gap-4">
+              <div className="p-2.5 bg-rose-50 text-rose-500 rounded-full shrink-0">
+                <Brain size={24} />
+              </div>
+              <div className="flex-1 space-y-1">
+                <h3 className="font-serif italic font-bold text-primary text-base">Authentication Issue</h3>
+                <p className="text-secondary text-xs leading-relaxed">{authError}</p>
+              </div>
+              <button 
+                onClick={() => setAuthError(null)}
+                className="p-1.5 hover:bg-surface-dim rounded-full text-secondary shrink-0 transition-all"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            
+            <div className="flex items-center gap-2.5 self-end">
+              <a 
+                href={window.location.href}
+                target="_blank"
+                rel="noreferrer"
+                className="px-4 py-2 bg-surface-dim hover:bg-surface-container text-secondary text-[10px] font-bold uppercase tracking-wider rounded-xl transition-colors flex items-center gap-1.5"
+              >
+                Open in New Tab
+              </a>
+              <button
+                onClick={() => {
+                  setAuthError(null);
+                  handleLogin();
+                }}
+                className="px-4 py-2 bg-primary text-on-primary text-[10px] font-bold uppercase tracking-wider rounded-xl shadow-md hover:shadow-lg transition-all"
+              >
+                Try Again
+              </button>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
