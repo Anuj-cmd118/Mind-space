@@ -31,14 +31,70 @@ interface WellnessCenterProps {
 export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onUpdateApps }: WellnessCenterProps) {
   const [activeTab, setActiveTab] = useState<'interceptor' | 'breathing' | 'phone'>('phone');
   const [isAddingApp, setIsAddingApp] = useState(false);
-  const [newApp, setNewApp] = useState({ name: '', url: '', category: 'Entertainment' });
+  const [selectedAppOption, setSelectedAppOption] = useState<string>('Instagram');
+  const [customAppName, setCustomAppName] = useState('');
+  const [newAppCategory, setNewAppCategory] = useState('Social Media');
   
+  const POPULAR_APPS = [
+    { name: 'Instagram', category: 'Social Media', package: 'com.instagram.android' },
+    { name: 'TikTok', category: 'Social Media', package: 'com.zhiliaoapp.musically' },
+    { name: 'YouTube', category: 'Entertainment', package: 'com.google.android.youtube' },
+    { name: 'Facebook', category: 'Social Media', package: 'com.facebook.katana' },
+    { name: 'Twitter / X', category: 'Social Media', package: 'com.twitter.android' },
+    { name: 'Reddit', category: 'Social Media', package: 'com.reddit.frontpage' },
+    { name: 'Snapchat', category: 'Social Media', package: 'com.snapchat.android' },
+    { name: 'Netflix', category: 'Entertainment', package: 'com.netflix.mediaclient' },
+    { name: 'WhatsApp', category: 'Social Media', package: 'com.whatsapp' },
+  ];
+
   const [isBreathActive, setIsBreathActive] = useState(false);
   const [breathPhase, setBreathPhase] = useState<'in' | 'hold' | 'out' | 'hold-exhale'>('in');
   const [showInterstitial, setShowInterstitial] = useState<{ name: string, url: string } | null>(null);
   
   const [nativeMetrics, setNativeMetrics] = useState<NativeScreenTime[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  const [usageStatsGranted, setUsageStatsGranted] = useState<boolean>(() => {
+    return localStorage.getItem('mindspace_perm_usage_stats') === 'granted';
+  });
+  
+  const [overlayGranted, setOverlayGranted] = useState<boolean>(() => {
+    return localStorage.getItem('mindspace_perm_overlay') === 'granted';
+  });
+
+  const [promptPermission, setPromptPermission] = useState<'usage' | 'overlay' | null>(null);
+  const [bypassToast, setBypassToast] = useState<string | null>(null);
+
+  // Poll real permissions from native bridge on mount and when window gets refocused
+  useEffect(() => {
+    const updatePermissions = async () => {
+      const perms = await nativeBridge.checkPermissions();
+      setUsageStatsGranted(perms.usageStats);
+      if (perms.usageStats) {
+        localStorage.setItem('mindspace_perm_usage_stats', 'granted');
+        const metrics = await nativeBridge.getScreenTimeMetrics();
+        setNativeMetrics(metrics);
+      } else {
+        localStorage.removeItem('mindspace_perm_usage_stats');
+      }
+
+      setOverlayGranted(perms.overlay);
+      if (perms.overlay) {
+        localStorage.setItem('mindspace_perm_overlay', 'granted');
+      } else {
+        localStorage.removeItem('mindspace_perm_overlay');
+      }
+    };
+
+    updatePermissions();
+
+    window.addEventListener('focus', updatePermissions);
+    const interval = setInterval(updatePermissions, 3000);
+    return () => {
+      window.removeEventListener('focus', updatePermissions);
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isBreathActive) {
@@ -57,13 +113,34 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
   }, [isBreathActive]);
 
   const addApp = () => {
-    if (!newApp.name || !newApp.url) return;
+    let name = '';
+    let url = '';
+    let category = '';
+
+    if (selectedAppOption === 'custom') {
+      if (!customAppName.trim()) return;
+      name = customAppName.trim();
+      url = `com.custom.${name.toLowerCase().replace(/\s+/g, '')}`;
+      category = newAppCategory;
+    } else {
+      const matched = POPULAR_APPS.find(a => a.name === selectedAppOption);
+      if (!matched) return;
+      name = matched.name;
+      url = matched.package;
+      category = matched.category;
+    }
+
     const entry: AppLockEntry = {
       id: crypto.randomUUID(),
-      ...newApp
+      name,
+      url,
+      category
     };
     onAddApp(entry);
-    setNewApp({ name: '', url: '', category: 'Entertainment' });
+    
+    // reset form fields
+    setCustomAppName('');
+    setSelectedAppOption('Instagram');
     setIsAddingApp(false);
     nativeBridge.vibrate();
   };
@@ -73,11 +150,19 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
   };
 
   const openAppWithFriction = (app: AppLockEntry) => {
+    if (!overlayGranted) {
+      setPromptPermission('overlay');
+      return;
+    }
     setShowInterstitial({ name: app.name, url: app.url });
     nativeBridge.vibrate();
   };
 
   const syncAndroidMetrics = async () => {
+    if (!usageStatsGranted) {
+      setPromptPermission('usage');
+      return;
+    }
     setIsSyncing(true);
     const metrics = await nativeBridge.getScreenTimeMetrics();
     setNativeMetrics(metrics);
@@ -143,14 +228,32 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
                       <Fingerprint size={18} className="opacity-40" />
                       <span className="text-xs font-medium">Usage Stats Access</span>
                     </div>
-                    <span className="text-[10px] text-emerald-600 font-bold uppercase">Granted</span>
+                    {usageStatsGranted ? (
+                      <span className="text-[10px] text-emerald-600 font-bold uppercase bg-emerald-50 px-2 py-1 rounded-lg">Granted</span>
+                    ) : (
+                      <button
+                        onClick={() => setPromptPermission('usage')}
+                        className="text-[10px] text-amber-600 hover:text-amber-700 font-bold uppercase hover:bg-amber-50 px-2.5 py-1 rounded-lg transition-colors border border-amber-300 bg-white"
+                      >
+                        Grant Access
+                      </button>
+                    )}
                   </div>
                   <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-surface-container">
                     <div className="flex items-center gap-3">
                       <Lock size={18} className="opacity-40" />
                       <span className="text-xs font-medium">Overlay Permission</span>
                     </div>
-                    <span className="text-[10px] text-emerald-600 font-bold uppercase">Active</span>
+                    {overlayGranted ? (
+                      <span className="text-[10px] text-emerald-600 font-bold uppercase bg-emerald-50 px-2 py-1 rounded-lg">Granted</span>
+                    ) : (
+                      <button
+                        onClick={() => setPromptPermission('overlay')}
+                        className="text-[10px] text-amber-600 hover:text-amber-700 font-bold uppercase hover:bg-amber-50 px-2.5 py-1 rounded-lg transition-colors border border-amber-300 bg-white"
+                      >
+                        Grant Access
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -258,7 +361,7 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
              </div>
 
              <AnimatePresence>
-                {isAddingApp && (
+                 {isAddingApp && (
                   <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
                     <motion.div 
                       initial={{ opacity: 0 }}
@@ -274,35 +377,64 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
                       className="relative w-full max-w-md bg-surface-dim rounded-[40px] p-8 shadow-2xl space-y-6"
                     >
                       <h3 className="text-2xl font-serif italic text-primary">New Cognitive Anchor</h3>
+                      
                       <div className="space-y-4">
-                        <input 
-                          type="text" 
-                          placeholder="App Name (e.g. Instagram)" 
-                          className="w-full px-5 py-4 bg-white rounded-2xl border border-surface-container outline-none"
-                          value={newApp.name}
-                          onChange={(e) => setNewApp({...newApp, name: e.target.value})}
-                        />
-                        <input 
-                          type="text" 
-                          placeholder="URL (e.g. instagram.com)" 
-                          className="w-full px-5 py-4 bg-white rounded-2xl border border-surface-container outline-none"
-                          value={newApp.url}
-                          onChange={(e) => setNewApp({...newApp, url: e.target.value})}
-                        />
-                        <select 
-                          className="w-full px-5 py-4 bg-white rounded-2xl border border-surface-container outline-none appearance-none"
-                          value={newApp.category}
-                          onChange={(e) => setNewApp({...newApp, category: e.target.value})}
-                        >
-                          <option>Entertainment</option>
-                          <option>Social Media</option>
-                          <option>News</option>
-                          <option>Shopping</option>
-                        </select>
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-secondary block mb-1.5">Select Mobile App</label>
+                          <select 
+                            className="w-full px-5 py-4 bg-white rounded-2xl border border-surface-container outline-none font-medium text-sm appearance-none cursor-pointer"
+                            value={selectedAppOption}
+                            onChange={(e) => setSelectedAppOption(e.target.value)}
+                          >
+                            <option value="Instagram">Instagram</option>
+                            <option value="TikTok">TikTok</option>
+                            <option value="YouTube">YouTube</option>
+                            <option value="Facebook">Facebook</option>
+                            <option value="Twitter / X">Twitter / X</option>
+                            <option value="Reddit">Reddit</option>
+                            <option value="Snapchat">Snapchat</option>
+                            <option value="Netflix">Netflix</option>
+                            <option value="WhatsApp">WhatsApp</option>
+                            <option value="custom">Other / Custom App...</option>
+                          </select>
+                        </div>
+
+                        {selectedAppOption === 'custom' && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            className="space-y-4"
+                          >
+                            <div>
+                              <input 
+                                type="text" 
+                                placeholder="App Name (e.g. Candy Crush)" 
+                                className="w-full px-5 py-4 bg-white rounded-2xl border border-surface-container outline-none text-sm font-medium"
+                                value={customAppName}
+                                onChange={(e) => setCustomAppName(e.target.value)}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-secondary block mb-1.5">App Category</label>
+                              <select 
+                                className="w-full px-5 py-4 bg-white rounded-2xl border border-surface-container outline-none text-sm font-medium appearance-none cursor-pointer"
+                                value={newAppCategory}
+                                onChange={(e) => setNewAppCategory(e.target.value)}
+                              >
+                                <option value="Entertainment">Entertainment</option>
+                                <option value="Social Media">Social Media</option>
+                                <option value="News">News</option>
+                                <option value="Shopping">Shopping</option>
+                                <option value="Games">Games</option>
+                              </select>
+                            </div>
+                          </motion.div>
+                        )}
                       </div>
+                      
                       <button 
                         onClick={addApp}
-                        className="w-full py-4 bg-primary text-on-primary rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl"
+                        className="w-full py-4 bg-primary text-on-primary rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl hover:shadow-2xl transition-all"
                       >
                         Create Intercept Hook
                       </button>
@@ -362,7 +494,7 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
         )}
       </div>
 
-      <AnimatePresence>
+       <AnimatePresence>
         {showInterstitial && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-surface-dim">
              <motion.div 
@@ -389,15 +521,28 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
                   >
                     Close & Reflect
                   </button>
-                  <a 
-                    href={showInterstitial.url.startsWith('http') ? showInterstitial.url : `https://${showInterstitial.url}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={() => setShowInterstitial(null)}
-                    className="py-5 bg-primary text-on-primary rounded-2xl font-bold text-[10px] uppercase tracking-widest shadow-lg flex items-center justify-center gap-2"
-                  >
-                    I am sure <ExternalLink size={14} />
-                  </a>
+                  {showInterstitial.url && showInterstitial.url !== '#' && !showInterstitial.url.includes('com.') ? (
+                    <a 
+                      href={showInterstitial.url.startsWith('http') ? showInterstitial.url : `https://${showInterstitial.url}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => setShowInterstitial(null)}
+                      className="py-5 bg-primary text-on-primary rounded-2xl font-bold text-[10px] uppercase tracking-widest shadow-lg flex items-center justify-center gap-2"
+                    >
+                      I am sure <ExternalLink size={14} />
+                    </a>
+                  ) : (
+                    <button 
+                      onClick={() => {
+                        setBypassToast(`Bypass authorized for ${showInterstitial.name}. Open with conscious intent.`);
+                        setShowInterstitial(null);
+                        setTimeout(() => setBypassToast(null), 3500);
+                      }}
+                      className="py-5 bg-primary text-on-primary rounded-2xl font-bold text-[10px] uppercase tracking-widest shadow-lg flex items-center justify-center gap-2"
+                    >
+                      I am sure <Check size={14} />
+                    </button>
+                  )}
                 </div>
 
                 <p className="text-[10px] text-secondary italic opacity-50 underline cursor-pointer" onClick={() => setShowInterstitial(null)}>
@@ -405,6 +550,86 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
                 </p>
              </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Interactive System Permissions Prompt */}
+      <AnimatePresence>
+        {promptPermission && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/60 backdrop-blur-xs">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="max-w-sm w-full bg-surface-dim rounded-3xl p-6 shadow-2xl border border-surface-container space-y-6"
+            >
+              <div className="flex items-center gap-3">
+                <div className={`p-3 rounded-2xl ${promptPermission === 'usage' ? 'bg-indigo-50 text-indigo-600' : 'bg-pink-50 text-pink-600'}`}>
+                  {promptPermission === 'usage' ? <Fingerprint size={24} /> : <Lock size={24} />}
+                </div>
+                <div>
+                  <h4 className="font-serif italic text-lg text-primary">
+                    {promptPermission === 'usage' ? 'Usage Statistics' : 'Draw Over Other Apps'}
+                  </h4>
+                  <p className="text-[10px] text-secondary font-bold uppercase tracking-widest opacity-60">System Security Intent</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-secondary text-xs leading-relaxed font-semibold">
+                  {promptPermission === 'usage' 
+                    ? "Allow Mindspace to access screen time and application usage statistics? This data is parsed inside your secure sandbox to map scrolling tendencies."
+                    : "Allow Mindspace draw overlay permission? This allows throwing the cognitive Pause Layer dialog when opening Distraction apps."
+                  }
+                </p>
+                <p className="text-[10px] text-secondary/50 italic leading-snug">
+                  Clicking Allow simulatedly approves Capacitor native background tasks inside this build.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setPromptPermission(null)}
+                  className="flex-1 py-3 bg-white border border-surface-container hover:bg-surface-dim rounded-xl text-[10px] font-bold uppercase tracking-wider text-secondary transition-colors"
+                >
+                  Deny
+                </button>
+                <button
+                  onClick={async () => {
+                    nativeBridge.vibrate();
+                    if (promptPermission === 'usage') {
+                      await nativeBridge.requestUsageStatsPermission();
+                      setUsageStatsGranted(true);
+                      localStorage.setItem('mindspace_perm_usage_stats', 'granted');
+                    } else {
+                      await nativeBridge.requestOverlayPermission();
+                      setOverlayGranted(true);
+                      localStorage.setItem('mindspace_perm_overlay', 'granted');
+                    }
+                    setPromptPermission(null);
+                  }}
+                  className="flex-1 py-3 bg-primary hover:shadow text-on-primary rounded-xl text-[10px] font-bold uppercase tracking-wider transition-colors"
+                >
+                  Allow
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bypass Toast */}
+      <AnimatePresence>
+        {bypassToast && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[150] px-6 py-3 bg-emerald-600 text-white rounded-2xl shadow-xl flex items-center gap-2.5 max-w-sm text-center border border-emerald-500"
+          >
+            <Check size={18} className="shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wider leading-relaxed">{bypassToast}</span>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

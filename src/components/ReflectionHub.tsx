@@ -19,11 +19,13 @@ import { api } from '../services/api';
 export default function ReflectionHub({ 
   items, 
   onUpdateItems,
-  callAiApi
+  callAiApi,
+  hasApiKey
 }: { 
   items: MindItem[], 
   onUpdateItems: (items: MindItem[]) => void,
-  callAiApi: (endpoint: string, body: any) => Promise<any>
+  callAiApi: (endpoint: string, body: any) => Promise<any>,
+  hasApiKey: boolean
 }) {
   const [activeTab, setActiveTab] = useState<'chat' | 'growth' | 'journal'>('chat');
   const [chatInput, setChatInput] = useState('');
@@ -56,14 +58,34 @@ export default function ReflectionHub({
     if (!chatInput.trim()) return;
     const userMsg = { role: 'user' as const, text: chatInput };
     setChatHistory(prev => [...prev, userMsg]);
+    const currentInput = chatInput;
     setChatInput('');
     setIsChatLoading(true);
 
+    if (!hasApiKey) {
+      setTimeout(() => {
+        setChatHistory(prev => [...prev, { 
+          role: 'ai', 
+          text: "I noticed your Gemini API Key is not set up yet. To enable personal reflections, please click on the Settings gear icon in the top header panel and enter your Gemini API Key in the 'AI Settings' section. You can obtain a free key from Google AI Studio (ai.google.dev). This key resides locally on your device for absolute privacy and security." 
+        }]);
+        setIsChatLoading(false);
+      }, 600);
+      return;
+    }
+
     try {
-      const data = await callAiApi('/api/chat', { message: chatInput, history: chatHistory, contextItems: items });
+      const data = await callAiApi('/api/chat', { message: currentInput, history: chatHistory, contextItems: items });
       setChatHistory(prev => [...prev, { role: 'ai', text: data.text }]);
-    } catch (e) {
-      setChatHistory(prev => [...prev, { role: 'ai', text: "I'm having trouble reflecting right now. Try again shortly." }]);
+    } catch (e: any) {
+      const errMsg = e.message || '';
+      if (errMsg.includes('API Key') || errMsg.includes('api_key') || errMsg.includes('No Gemini API Key')) {
+        setChatHistory(prev => [...prev, { 
+          role: 'ai', 
+          text: "Your Gemini API Key is missing or invalid. Please click the Settings gear icon in the top-right header and verify your API Key under 'AI Settings'." 
+        }]);
+      } else {
+        setChatHistory(prev => [...prev, { role: 'ai', text: "I'm having trouble reflecting right now. Please verify your internet connection or check if your Gemini API key is valid." }]);
+      }
     } finally {
       setIsChatLoading(false);
     }

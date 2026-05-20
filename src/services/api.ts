@@ -25,7 +25,14 @@ export const api = {
     });
     
     if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
+      let errMsg = `API Error: ${response.statusText}`;
+      try {
+        const errJson = await response.json();
+        if (errJson && (errJson.error || errJson.message)) {
+          errMsg = errJson.error || errJson.message;
+        }
+      } catch (_) {}
+      throw new Error(errMsg);
     }
     
     return response.json();

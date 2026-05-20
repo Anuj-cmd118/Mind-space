@@ -34,6 +34,7 @@ import { auth, googleProvider, signInWithPopup, signOut, GoogleAuthProvider } fr
 import { api } from './services/api';
 import { MindItem, ContentType, DigitalImport, AppLockEntry } from './types';
 import ImportManager from './components/ImportManager';
+import { nativeBridge } from './services/nativeBridge';
 
 export default function App() {
   const [items, setItems] = useState<MindItem[]>([]);
@@ -57,6 +58,8 @@ export default function App() {
   const [isCloudSaving, setIsCloudSaving] = useState(false);
   const [hasDriveToken, setHasDriveToken] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [activeInterceptedApp, setActiveInterceptedApp] = useState<AppLockEntry | null>(null);
+  const [bypassToast, setBypassToast] = useState<string | null>(null);
 
   // Auth Listener & Onboarding check
   useEffect(() => {
@@ -74,6 +77,36 @@ export default function App() {
       setAuthReady(true);
     });
   }, []);
+
+  // Sync blocked apps list to Android background service and poll for background app interception
+  useEffect(() => {
+    // Sync URLs (package names) to SharedPreferences
+    const urls = blockedApps.map(app => app.url);
+    nativeBridge.updateBlockedApps(urls);
+
+    // Background block poll
+    const checkInterception = async () => {
+      const interceptedPackage = await nativeBridge.getInterceptedApp();
+      if (interceptedPackage) {
+        // Match the package with our records
+        const app = blockedApps.find(a => a.url === interceptedPackage);
+        if (app) {
+          console.log("[Native Interceptor] Displaying take-over conscious block overlay for:", app.name);
+          setActiveInterceptedApp(app);
+          nativeBridge.vibrate();
+        }
+      }
+    };
+
+    checkInterception();
+    window.addEventListener('focus', checkInterception);
+    const interval = setInterval(checkInterception, 1500);
+
+    return () => {
+      window.removeEventListener('focus', checkInterception);
+      clearInterval(interval);
+    };
+  }, [blockedApps]);
 
   // API Wrapper with Key
   const callAiApi = async (endpoint: string, body: any) => {
@@ -520,7 +553,7 @@ export default function App() {
 
             {view === 'reflection' && (
               <div className="animate-in slide-in-from-bottom duration-700">
-                <ReflectionHub items={items} onUpdateItems={setItems} callAiApi={callAiApi} />
+                <ReflectionHub items={items} onUpdateItems={setItems} callAiApi={callAiApi} hasApiKey={!!userSettings.geminiApiKey} />
               </div>
             )}
 
@@ -679,6 +712,14 @@ export default function App() {
               ));
               setSelectedItem(prev => prev ? { ...prev, linkedItemIds: [...(prev.linkedItemIds || []), targetId] } : null);
               setIsLinking(false);
+            }}
+            onDelete={(id) => {
+              setItems(prev => prev.filter(i => i.id !== id));
+              setSelectedItem(null);
+            }}
+            onUpdate={(updatedItem) => {
+              setItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+              setSelectedItem(updatedItem);
             }}
             isLinking={isLinking}
             setIsLinking={setIsLinking}
@@ -865,6 +906,69 @@ export default function App() {
                 Try Again
               </button>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Conscious Interceptor Global Native Take-Over Overlay */}
+      <AnimatePresence>
+        {activeInterceptedApp && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-6 bg-surface-dim">
+             <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="max-w-xl w-full bg-white rounded-[48px] p-12 text-center space-y-12 shadow-2xl border border-surface-container"
+             >
+                <div className="space-y-4">
+                   <div className="w-16 h-16 bg-primary/5 rounded-3xl mx-auto flex items-center justify-center text-primary">
+                     <Brain size={32} />
+                   </div>
+                   <h2 className="text-4xl font-serif italic text-primary leading-tight">Wait, take a moment.</h2>
+                   <p className="text-secondary text-sm font-medium leading-relaxed italic opacity-70">
+                     You are about to open <strong>{activeInterceptedApp.name}</strong>. 
+                     Are you opening this for a real purpose, or is this an unconscious reaction?
+                   </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => setActiveInterceptedApp(null)}
+                    className="py-5 bg-surface-dim text-secondary rounded-2xl font-bold text-[10px] uppercase tracking-widest hover:bg-surface-container-low transition-colors"
+                  >
+                    Close & Reflect
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setBypassToast(`Bypass authorized for ${activeInterceptedApp.name}. Open with conscious intent.`);
+                      setActiveInterceptedApp(null);
+                      setTimeout(() => setBypassToast(null), 3500);
+                    }}
+                    className="py-5 bg-primary text-on-primary rounded-2xl font-bold text-[10px] uppercase tracking-widest shadow-lg flex items-center justify-center gap-2 hover:bg-primary-dark transition-colors"
+                  >
+                    I am sure <Check size={14} />
+                  </button>
+                </div>
+
+                <p className="text-[10px] text-secondary italic opacity-50 underline cursor-pointer" onClick={() => setActiveInterceptedApp(null)}>
+                  "One breath can change the trajectory of an hour."
+                </p>
+             </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Bypass Toast Notification close to the drawer overlay */}
+      <AnimatePresence>
+        {bypassToast && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[150] px-6 py-3 bg-emerald-600 text-white rounded-2xl shadow-xl flex items-center gap-2.5 max-w-sm text-center border border-emerald-500"
+          >
+            <Check size={18} className="shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wider leading-relaxed">{bypassToast}</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1112,6 +1216,8 @@ function DetailModal({
   items, 
   onClose, 
   onLink, 
+  onDelete,
+  onUpdate,
   isLinking, 
   setIsLinking 
 }: { 
@@ -1119,11 +1225,24 @@ function DetailModal({
   items: MindItem[], 
   onClose: () => void, 
   onLink: (id: string) => void,
+  onDelete: (id: string) => void,
+  onUpdate: (updated: MindItem) => void,
   isLinking: boolean,
   setIsLinking: (v: boolean) => void
 }) {
   const linkedItems = items.filter(i => item.linkedItemIds?.includes(i.id));
   const otherItems = items.filter(i => i.id !== item.id && !item.linkedItemIds?.includes(i.id));
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isEditingNote, setIsEditingNote] = useState(false);
+  const [mediaNote, setMediaNote] = useState(item.content || '');
+
+  // If item shifts, synchronize the input state
+  useEffect(() => {
+    setMediaNote(item.content || '');
+    setIsEditingNote(false);
+    setShowDeleteConfirm(false);
+  }, [item.id]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
@@ -1140,6 +1259,44 @@ function DetailModal({
         exit={{ scale: 0.9, opacity: 0 }}
         className="relative w-full max-w-3xl max-h-[80vh] overflow-y-auto bg-surface-dim rounded-[48px] p-10 shadow-2xl flex flex-col gap-8 no-scrollbar"
       >
+        {/* Absolute Delete Confirmation Overlay */}
+        <AnimatePresence>
+          {showDeleteConfirm && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-[#3D3A35]/80 backdrop-blur-md flex items-center justify-center p-6 z-50 rounded-[48px]"
+            >
+              <div className="max-w-md w-full bg-white rounded-[32px] p-8 shadow-2xl border border-black/5 text-center space-y-6">
+                <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto">
+                  <Trash2 size={28} />
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl font-serif text-primary italic">Uproot Memory?</h3>
+                  <p className="text-sm text-secondary leading-relaxed">
+                    Are you sure you want to delete <strong className="font-semibold">"{item.title}"</strong>? This will permanently remove it from your Memory Garden.
+                  </p>
+                </div>
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setShowDeleteConfirm(false)}
+                    className="flex-1 py-3 bg-surface-container hover:bg-surface-container-high rounded-xl text-[10px] font-bold uppercase tracking-wider text-secondary transition-colors"
+                  >
+                    Keep Memory
+                  </button>
+                  <button
+                    onClick={() => onDelete(item.id)}
+                    className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider shadow transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <header className="flex justify-between items-start">
           <div className="space-y-1">
             <span className="px-3 py-1 bg-surface-container rounded-full text-[10px] font-bold uppercase tracking-widest text-secondary">
@@ -1147,9 +1304,18 @@ function DetailModal({
             </span>
             <h2 className="text-4xl font-serif text-primary italic leading-tight">{item.title}</h2>
           </div>
-          <button onClick={onClose} className="p-3 hover:bg-black/5 rounded-full text-secondary">
-            <X size={28} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setShowDeleteConfirm(true)} 
+              className="p-3 hover:bg-red-50 hover:text-red-500 rounded-full text-secondary transition-colors"
+              title="Delete memory"
+            >
+              <Trash2 size={22} />
+            </button>
+            <button onClick={onClose} className="p-3 hover:bg-black/5 rounded-full text-secondary">
+              <X size={28} />
+            </button>
+          </div>
         </header>
 
         {item.summary && (
@@ -1160,14 +1326,68 @@ function DetailModal({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
            <div className="space-y-4">
-              <h4 className="text-[10px] font-bold uppercase tracking-widest text-secondary opacity-50">Content</h4>
-              <p className={`text-on-primary-container leading-relaxed ${item.type === 'quote' ? 'font-serif italic text-xl' : 'text-sm'}`}>
-                {item.content}
-              </p>
-              {item.imageData && (
-                <div className="rounded-3xl overflow-hidden border border-surface-container shadow-sm">
-                  <img src={item.imageData} alt="" className="w-full h-auto" />
+              {item.imageData ? (
+                <div className="space-y-4">
+                  <div className="rounded-3xl overflow-hidden border border-surface-container shadow-sm bg-surface-container-low max-h-96 flex items-center justify-center">
+                    <img src={item.imageData} alt="" className="w-full h-auto max-h-96 object-contain" />
+                  </div>
+                  
+                  <div className="space-y-2 mt-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-bold uppercase tracking-widest text-secondary opacity-50">Media Notes / Caption</h4>
+                    </div>
+                    {isEditingNote ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={mediaNote}
+                          onChange={(e) => setMediaNote(e.target.value)}
+                          className="w-full p-4 bg-white rounded-2xl outline-none focus:ring-1 focus:ring-primary/20 resize-none text-sm leading-relaxed border border-surface-container shadow-sm placeholder:text-secondary/30"
+                          placeholder="Add notes, context, or thoughts to this visual memory..."
+                          rows={4}
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => { setIsEditingNote(false); setMediaNote(item.content || ''); }}
+                            className="px-3 py-1.5 bg-surface-container hover:bg-surface-container-high rounded-lg text-[10px] font-bold uppercase tracking-wider text-secondary transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => {
+                              onUpdate({ ...item, content: mediaNote });
+                              setIsEditingNote(false);
+                            }}
+                            className="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-[10px] font-bold uppercase tracking-wider hover:shadow transition-colors"
+                          >
+                            Save Note
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-white rounded-2xl border border-surface-container flex flex-col gap-3">
+                        <p className="text-sm text-primary/80 whitespace-pre-wrap leading-relaxed">
+                          {item.content || <span className="italic text-secondary/40">No notes yet. Add your thoughts or details to this media...</span>}
+                        </p>
+                        <button
+                          onClick={() => {
+                            setMediaNote(item.content || '');
+                            setIsEditingNote(true);
+                          }}
+                          className="w-fit text-[10px] font-bold uppercase tracking-widest text-primary hover:underline hover:text-primary-dark transition-colors"
+                        >
+                          {item.content ? 'Edit Notes' : '+ Add Notes'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
+              ) : (
+                <>
+                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-secondary opacity-50">Content</h4>
+                  <p className={`text-on-primary-container leading-relaxed ${item.type === 'quote' ? 'font-serif italic text-xl' : 'text-sm'}`}>
+                    {item.content}
+                  </p>
+                </>
               )}
            </div>
 
