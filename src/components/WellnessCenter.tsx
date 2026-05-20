@@ -18,7 +18,6 @@ import {
   Fingerprint
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import PomodoroTimer from './PomodoroTimer';
 import { AppLockEntry } from '../types';
 import { nativeBridge, NativeScreenTime } from '../services/nativeBridge';
 
@@ -30,16 +29,32 @@ interface WellnessCenterProps {
 }
 
 export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onUpdateApps }: WellnessCenterProps) {
-  const [activeTab, setActiveTab] = useState<'focus' | 'interceptor' | 'breathing' | 'android'>('focus');
+  const [activeTab, setActiveTab] = useState<'interceptor' | 'breathing' | 'phone'>('phone');
   const [isAddingApp, setIsAddingApp] = useState(false);
   const [newApp, setNewApp] = useState({ name: '', url: '', category: 'Entertainment' });
   
   const [isBreathActive, setIsBreathActive] = useState(false);
-  const [breathPhase, setBreathPhase] = useState<'in' | 'hold' | 'out'>('in');
+  const [breathPhase, setBreathPhase] = useState<'in' | 'hold' | 'out' | 'hold-exhale'>('in');
   const [showInterstitial, setShowInterstitial] = useState<{ name: string, url: string } | null>(null);
   
   const [nativeMetrics, setNativeMetrics] = useState<NativeScreenTime[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    if (!isBreathActive) {
+      setBreathPhase('in');
+      return;
+    }
+    const interval = setInterval(() => {
+      setBreathPhase((prev) => {
+        if (prev === 'in') return 'hold';
+        if (prev === 'hold') return 'out';
+        if (prev === 'out') return 'hold-exhale';
+        return 'in';
+      });
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [isBreathActive]);
 
   const addApp = () => {
     if (!newApp.name || !newApp.url) return;
@@ -71,35 +86,28 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
 
   return (
     <div className="space-y-8 pb-10">
-      <header className="flex justify-between items-end">
+      <header className="flex flex-col gap-4 pb-2 border-b border-surface-container">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h2 className="text-3xl font-serif text-primary leading-tight">Cognitive Wellness</h2>
-            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[8px] font-bold uppercase rounded-md">Android Native</span>
           </div>
           <p className="text-secondary text-sm italic font-medium opacity-70">
             Reclaim your attention from the dopamine loop.
           </p>
         </div>
         
-        <div className="flex gap-1 p-1 bg-surface-container rounded-2xl">
+        <div className="flex flex-wrap gap-1 p-1 bg-surface-container rounded-2xl w-fit">
           <button 
-            onClick={() => setActiveTab('focus')}
-            className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'focus' ? 'bg-white shadow-sm text-primary' : 'text-secondary'}`}
+            onClick={() => setActiveTab('phone')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'phone' ? 'bg-white shadow-sm text-primary' : 'text-secondary'}`}
           >
-            Timer
-          </button>
-          <button 
-            onClick={() => setActiveTab('android')}
-            className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'android' ? 'bg-white shadow-sm text-primary' : 'text-secondary'}`}
-          >
-            Android
+            Phone
           </button>
           <button 
             onClick={() => setActiveTab('interceptor')}
             className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === 'interceptor' ? 'bg-white shadow-sm text-primary' : 'text-secondary'}`}
           >
-            Friction
+            Interceptor
           </button>
           <button 
             onClick={() => setActiveTab('breathing')}
@@ -111,14 +119,8 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
       </header>
 
       <div className="min-h-[500px]">
-        {activeTab === 'focus' && (
-          <div className="animate-in fade-in duration-500">
-             <PomodoroTimer />
-          </div>
-        )}
-
-        {activeTab === 'android' && (
-          <div className="space-y-6 animate-in slide-in-from-right duration-500">
+        {activeTab === 'phone' && (
+          <div className="space-y-6 animate-in fade-in duration-300">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-surface-dim rounded-[40px] p-8 border border-surface-container flex flex-col gap-6">
                 <div className="flex items-center justify-between">
@@ -193,7 +195,7 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
             <div className="bg-primary rounded-[40px] p-8 text-white shadow-xl flex items-center justify-between group">
               <div className="space-y-2">
                 <h3 className="text-2xl font-serif italic text-white/90">System-Wide Interceptor</h3>
-                <p className="text-xs opacity-70 max-w-md">The Interceptor creates a cognitive pause before any blocked Android app launches.</p>
+                <p className="text-xs opacity-70 max-w-md">The Interceptor creates a cognitive pause before any blocked phone app launches.</p>
               </div>
               <div className="p-4 bg-white/10 rounded-full group-hover:scale-110 transition-transform">
                 <ShieldCheck size={32} />
@@ -203,7 +205,7 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
         )}
 
         {activeTab === 'interceptor' && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-in fade-in duration-300">
              <div className="bg-primary rounded-[48px] p-10 text-white shadow-xl flex flex-col md:flex-row items-center gap-8">
                 <div className="p-6 bg-white/10 rounded-[32px] border border-white/20">
                   <ShieldCheck size={64} className="text-white/80" />
@@ -250,7 +252,7 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
                 {blockedApps.length === 0 && (
                   <div className="col-span-full py-20 text-center space-y-4 opacity-30">
                     <Lock size={48} className="mx-auto" />
-                    <p className="font-serif italic">No apps listed for cognitive friction.</p>
+                    <p className="font-serif italic">No apps listed for system interception.</p>
                   </div>
                 )}
              </div>
@@ -302,7 +304,7 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
                         onClick={addApp}
                         className="w-full py-4 bg-primary text-on-primary rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl"
                       >
-                        Create Friction Point
+                        Create Intercept Hook
                       </button>
                     </motion.div>
                   </div>
@@ -312,7 +314,7 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
         )}
 
         {activeTab === 'breathing' && (
-          <div className="h-[500px] flex flex-col items-center justify-center text-center space-y-12">
+          <div className="h-[500px] flex flex-col items-center justify-center text-center space-y-12 animate-in fade-in duration-300">
              <div className="space-y-2">
                 <h3 className="text-4xl font-serif italic text-primary">Simple Decompression</h3>
                 <p className="text-secondary text-sm font-medium opacity-60">Reset your nervous system with intentional breath.</p>
@@ -321,27 +323,23 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
              <div className="relative w-80 h-80 flex items-center justify-center">
                 <motion.div 
                   animate={isBreathActive ? {
-                    scale: breathPhase === 'in' ? 1.5 : (breathPhase === 'hold' ? 1.5 : 1),
+                    scale: (breathPhase === 'in' || breathPhase === 'hold') ? 1.5 : 1,
                   } : { scale: 1 }}
                   transition={{ duration: 4, ease: "easeInOut" }}
-                  onAnimationComplete={() => {
-                    if (!isBreathActive) return;
-                    if (breathPhase === 'in') setBreathPhase('hold');
-                    else if (breathPhase === 'hold') setBreathPhase('out');
-                    else setBreathPhase('in');
-                  }}
                   className="w-40 h-40 bg-primary/10 rounded-full border border-primary/20 flex items-center justify-center"
                 >
                   <motion.div 
                     animate={isBreathActive ? {
-                      scale: breathPhase === 'in' ? 0.8 : (breathPhase === 'out' ? 0.2 : 0.8),
+                      scale: (breathPhase === 'in' || breathPhase === 'hold') ? 0.8 : 0.2,
                     } : { scale: 0.5 }}
                     className="w-full h-full bg-primary/20 rounded-full blur-2xl"
                   />
                   <div className="absolute inset-0 flex items-center justify-center">
                     <span className="text-lg font-serif italic text-primary uppercase tracking-widest transition-all">
                       {isBreathActive ? 
-                        (breathPhase === 'in' ? 'Inhale' : (breathPhase === 'hold' ? 'Hold' : 'Exhale')) 
+                        (breathPhase === 'in' ? 'Inhale' : 
+                         breathPhase === 'hold' ? 'Hold' : 
+                         breathPhase === 'out' ? 'Exhale' : 'Hold Exhale') 
                         : 'Calm'
                       }
                     </span>
@@ -358,7 +356,7 @@ export default function WellnessCenter({ blockedApps, onAddApp, onRemoveApp, onU
                 isBreathActive ? 'bg-surface-container text-primary' : 'bg-primary text-on-primary'
               }`}
              >
-               {isBreathActive ? 'Deactivate' : 'Begin Breathing'}
+                {isBreathActive ? 'Deactivate' : 'Begin Breathing'}
              </button>
           </div>
         )}

@@ -300,7 +300,7 @@ export default function App() {
             active={view === 'timer'} 
             onClick={() => setView('timer')} 
             icon={<Timer size={18} />} 
-            label="Focus Lab" 
+            label="Pomodoro Timer" 
           />
           <div className="pt-6">
             <div className="text-[11px] uppercase tracking-widest text-secondary font-bold mb-4 opacity-70">System</div>
@@ -759,7 +759,7 @@ export default function App() {
                   active={view === 'timer'} 
                   onClick={() => { setView('timer'); setIsSidebarOpen(false); }} 
                   icon={<Timer size={18} />} 
-                  label="Focus Lab" 
+                  label="Pomodoro Timer" 
                 />
                 <div className="pt-6">
                   <div className="text-[11px] uppercase tracking-widest text-secondary font-bold mb-4 opacity-70">System</div>
